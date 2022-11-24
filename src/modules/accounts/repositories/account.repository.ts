@@ -1,8 +1,7 @@
 import { DataSource, Repository } from 'typeorm';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Account } from '../entities/account.entity';
 
-@Injectable()
 export class AccountRepository extends Repository<Account> {
   constructor(private dataSource: DataSource) {
     super(Account, dataSource.createEntityManager());

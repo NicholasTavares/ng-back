@@ -1,9 +1,8 @@
 import { DataSource, Repository } from 'typeorm';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { Transaction } from '../entities/transaction.entity';
 import { Account } from 'src/modules/accounts/entities/account.entity';
 
-@Injectable()
 export class TransactionRepository extends Repository<Transaction> {
   constructor(private dataSource: DataSource) {
     super(Transaction, dataSource.createEntityManager());

@@ -1,19 +1,46 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Repository, DataSource } from 'typeorm';
 import { AccountsService } from '../accounts/accounts.service';
+import { Account } from '../accounts/entities/account.entity';
 import { CreateTransactionDTO } from './dto/create-transaction.dto';
 import { Transaction } from './entities/transaction.entity';
-import { TransactionRepository } from './repositories/transaction.repository';
 
 @Injectable()
 export class TransactionsService {
-  constructor(
-    private readonly transactionRepository: TransactionRepository,
-    private readonly accountsService: AccountsService,
-  ) {}
+  constructor(private readonly dataSource: DataSource) {}
+
+  @Inject('USERS_REPOSITORY')
+  private transactionRepository: Repository<Transaction>;
+
+  @Inject(AccountsService)
+  private readonly accountsService: AccountsService;
 
   async findTransactionsByLoggedUser(user_id: string): Promise<Transaction[]> {
-    const transactions =
-      await this.transactionRepository.findTransactionsByLoggedUser(user_id);
+    const transactions = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .innerJoin('transaction.debitedAccount', 'debitedAccount')
+      .innerJoin('transaction.creditedAccount', 'creditedAccount')
+      .innerJoin('debitedAccount.user', 'debitedAccountUser')
+      .innerJoin('creditedAccount.user', 'creditedAccountUser')
+      .where([
+        {
+          creditedAccount: {
+            user_id,
+          },
+        },
+        {
+          debitedAccount: {
+            user_id,
+          },
+        },
+      ])
+      .select(['transaction.id', 'transaction.value', 'transaction.created_at'])
+      .addSelect([
+        'debitedAccountUser.username',
+        'creditedAccountUser.username',
+      ])
+      .orderBy('transaction.created_at', 'DESC')
+      .getRawMany();
 
     return transactions;
   }
@@ -21,10 +48,23 @@ export class TransactionsService {
   async findDebitedTransactionsByLoggedUser(
     user_id: string,
   ): Promise<Transaction[]> {
-    const transactions =
-      await this.transactionRepository.findDebitedTransactionsByLoggedUser(
-        user_id,
-      );
+    const transactions = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .innerJoin('transaction.debitedAccount', 'debitedAccount')
+      .innerJoin('transaction.creditedAccount', 'creditedAccount')
+      .innerJoin('debitedAccount.user', 'debitedAccountUser')
+      .innerJoin('creditedAccount.user', 'creditedAccountUser')
+      .where({
+        debitedAccount: {
+          user_id,
+        },
+      })
+      .select(['transaction.id', 'transaction.value', 'transaction.created_at'])
+      .addSelect([
+        'debitedAccountUser.username',
+        'creditedAccountUser.username',
+      ])
+      .getRawMany();
 
     return transactions;
   }
@@ -32,10 +72,23 @@ export class TransactionsService {
   async findCreditedTransactionsByLoggedUser(
     user_id: string,
   ): Promise<Transaction[]> {
-    const transactions =
-      await this.transactionRepository.findCreditedTransactionsByLoggedUser(
-        user_id,
-      );
+    const transactions = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .innerJoin('transaction.debitedAccount', 'debitedAccount')
+      .innerJoin('transaction.creditedAccount', 'creditedAccount')
+      .innerJoin('debitedAccount.user', 'debitedAccountUser')
+      .innerJoin('creditedAccount.user', 'creditedAccountUser')
+      .where({
+        creditedAccount: {
+          user_id,
+        },
+      })
+      .select(['transaction.id', 'transaction.value', 'transaction.created_at'])
+      .addSelect([
+        'debitedAccountUser.username',
+        'creditedAccountUser.username',
+      ])
+      .getRawMany();
 
     return transactions;
   }
@@ -47,7 +100,7 @@ export class TransactionsService {
     const roundedAndConvertedValueToCents = Math.round(value * 100);
 
     if (roundedAndConvertedValueToCents <= 0) {
-      throw new BadRequestException('Valor inválido');
+      throw new BadRequestException('Invalid value!');
     }
 
     const accountToBeDebited = await this.accountsService.findAccountByUser(
@@ -57,7 +110,7 @@ export class TransactionsService {
     const accountToBeDebitedBalance = Number(accountToBeDebited.balance);
 
     if (accountToBeDebitedBalance < roundedAndConvertedValueToCents) {
-      throw new BadRequestException('Saldo insuficiente.');
+      throw new BadRequestException('Insufficient money in the account!');
     }
 
     const accountToBeCretited = await this.accountsService.findAccountByUser(
@@ -67,16 +120,50 @@ export class TransactionsService {
     const accountToBeCretitedBalance = Number(accountToBeCretited.balance);
 
     if (accountToBeDebited.id === accountToBeCretited.id) {
-      throw new BadRequestException('Conta de destino inválida.');
+      throw new BadRequestException('Invalid destination!');
     }
 
-    const transaction = await this.transactionRepository.createTransaction(
-      accountToBeDebitedBalance,
-      accountToBeCretitedBalance,
-      accountToBeDebited.id,
-      accountToBeCretited.id,
-      roundedAndConvertedValueToCents,
-    );
+    // TRANSACTION
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let transaction: Transaction;
+
+    try {
+      const accountToBeDebitedNewBalance = accountToBeDebitedBalance - value;
+      const accountDebited = await queryRunner.manager.preload(Account, {
+        id: accountToBeDebited.id,
+        balance: accountToBeDebitedNewBalance,
+      });
+
+      const accountToBeCretitedNewBalance = accountToBeCretitedBalance + value;
+      const accountCretited = await queryRunner.manager.preload(Account, {
+        id: accountToBeCretited.id,
+        balance: accountToBeCretitedNewBalance,
+      });
+
+      await queryRunner.manager.save([accountDebited, accountCretited]);
+
+      transaction = queryRunner.manager.create(Transaction, {
+        debitedAccount: {
+          id: accountDebited.id,
+        },
+        creditedAccount: {
+          id: accountCretited.id,
+        },
+        value,
+      });
+
+      await queryRunner.manager.save(transaction);
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw new BadRequestException('Erro ao concluir transação!');
+    } finally {
+      await queryRunner.release();
+    }
 
     return transaction;
   }
