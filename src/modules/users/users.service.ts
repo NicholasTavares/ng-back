@@ -1,21 +1,38 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { Repository } from 'typeorm';
+import { User } from './entities/user.entity';
 import { CreateUserDTO } from './dto/create-user.dto';
 import { UpdateUserDTO } from './dto/update-user.dto';
-import { User } from './entities/user.entity';
-import { UserRepository } from './repositories/user.repository';
 
+const INITIAL_BALANCE_IN_CENTS = 10000; // 100 reais
 @Injectable()
 export class UsersService {
-  constructor(private readonly userRepository: UserRepository) {}
+  @Inject('USERS_REPOSITORY')
+  private userRepository: Repository<User>;
 
   async findAllUsers(): Promise<User[]> {
-    const users = await this.userRepository.findAll();
+    const users = await this.userRepository.find();
 
     return users;
   }
 
   async findUser(id: string): Promise<User> {
-    const user = await this.userRepository.findUser(id);
+    const user = await this.userRepository.findOne({
+      where: {
+        id,
+      },
+      relations: ['account'],
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ID ${id} not found`);
+    }
 
     return user;
   }
@@ -30,18 +47,44 @@ export class UsersService {
   }
 
   async createUser(createUserDTO: CreateUserDTO): Promise<User> {
-    const user = await this.userRepository.createUser(createUserDTO);
+    const user = this.userRepository.create({
+      ...createUserDTO,
+      account: {
+        balance: INITIAL_BALANCE_IN_CENTS,
+      },
+    });
+
+    try {
+      await this.userRepository.save(user);
+    } catch (error) {
+      if (error.code === '23505') {
+        // duplicate username
+        throw new ConflictException('Username already exists');
+      }
+
+      throw new InternalServerErrorException();
+    }
 
     return user;
   }
 
   async updateUser(id: string, updateUserDTO: UpdateUserDTO): Promise<User> {
-    const user = await this.userRepository.updateUser(id, updateUserDTO);
+    const user = await this.userRepository.preload({
+      id,
+      ...updateUserDTO,
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ID ${id} not found`);
+    }
+
+    await this.userRepository.save(user);
 
     return user;
   }
 
   async softRemoveUser(id: string) {
-    await this.userRepository.softRemoveUser(id);
+    const user = await this.findUser(id);
+    await this.userRepository.softRemove(user);
   }
 }

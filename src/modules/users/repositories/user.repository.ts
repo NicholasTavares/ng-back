@@ -1,7 +1,6 @@
 import { DataSource, Repository } from 'typeorm';
 import {
   ConflictException,
-  Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,7 +10,6 @@ import { UpdateUserDTO } from '../dto/update-user.dto';
 
 const INITIAL_BALANCE_IN_CENTS = 10000; // 100 reais
 
-@Injectable()
 export class UserRepository extends Repository<User> {
   constructor(private dataSource: DataSource) {
     super(User, dataSource.createEntityManager());

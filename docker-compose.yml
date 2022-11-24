@@ -8,21 +8,6 @@ volumes:
   postgres:
 
 services:
-  api:
-    build: .
-    restart: always
-    container_name: api_ngcash
-    networks:
-      - app-ngcash
-    depends_on:
-      - postgres
-    ports:
-      - 3000:3000
-    volumes:
-      - ./src:/usr/ngcash/src
-      - ./.env:/usr/ngcash/.env
-    command: yarn start:dev
-
   postgres:
     container_name: postgres_container
     image: postgres
