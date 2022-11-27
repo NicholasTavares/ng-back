@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { AccountsService } from '../accounts/accounts.service';
 import { Account } from '../accounts/entities/account.entity';
@@ -7,13 +8,13 @@ import { Transaction } from './entities/transaction.entity';
 
 @Injectable()
 export class TransactionsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly accountsService: AccountsService,
+  ) {}
 
-  @Inject('USERS_REPOSITORY')
+  @InjectRepository(Transaction)
   private transactionRepository: Repository<Transaction>;
-
-  @Inject(AccountsService)
-  private readonly accountsService: AccountsService;
 
   async findTransactionsByLoggedUser(user_id: string): Promise<Transaction[]> {
     const transactions = await this.transactionRepository
@@ -132,13 +133,15 @@ export class TransactionsService {
     let transaction: Transaction;
 
     try {
-      const accountToBeDebitedNewBalance = accountToBeDebitedBalance - value;
+      const accountToBeDebitedNewBalance =
+        accountToBeDebitedBalance - roundedAndConvertedValueToCents;
       const accountDebited = await queryRunner.manager.preload(Account, {
         id: accountToBeDebited.id,
         balance: accountToBeDebitedNewBalance,
       });
 
-      const accountToBeCretitedNewBalance = accountToBeCretitedBalance + value;
+      const accountToBeCretitedNewBalance =
+        accountToBeCretitedBalance + roundedAndConvertedValueToCents;
       const accountCretited = await queryRunner.manager.preload(Account, {
         id: accountToBeCretited.id,
         balance: accountToBeCretitedNewBalance,
@@ -153,14 +156,14 @@ export class TransactionsService {
         creditedAccount: {
           id: accountCretited.id,
         },
-        value,
+        value: roundedAndConvertedValueToCents,
       });
 
       await queryRunner.manager.save(transaction);
       await queryRunner.commitTransaction();
     } catch (err) {
       await queryRunner.rollbackTransaction();
-      throw new BadRequestException('Erro ao concluir transação!');
+      throw new BadRequestException('Error completing transaction!');
     } finally {
       await queryRunner.release();
     }

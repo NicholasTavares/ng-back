@@ -34,6 +34,6 @@ export class Transaction {
   @Column({ type: 'integer' })
   value: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 }

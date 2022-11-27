@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -9,11 +8,12 @@ import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CreateUserDTO } from './dto/create-user.dto';
 import { UpdateUserDTO } from './dto/update-user.dto';
+import { InjectRepository } from '@nestjs/typeorm';
 
 const INITIAL_BALANCE_IN_CENTS = 10000; // 100 reais
 @Injectable()
 export class UsersService {
-  @Inject('USERS_REPOSITORY')
+  @InjectRepository(User)
   private userRepository: Repository<User>;
 
   async findAllUsers(): Promise<User[]> {

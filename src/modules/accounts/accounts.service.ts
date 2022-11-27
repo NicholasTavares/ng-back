@@ -1,10 +1,11 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from './entities/account.entity';
 
 @Injectable()
 export class AccountsService {
-  @Inject('ACCOUNTS_REPOSITORY')
+  @InjectRepository(Account)
   private accountRepository: Repository<Account>;
 
   async findAccountByUser(user_id: string): Promise<Account> {
